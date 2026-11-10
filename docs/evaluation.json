@@ -1,0 +1,151 @@
+{
+  "data_sha256": "d25e1d4680b2b91bcf5fd0a6b690f26c3bdfd52eb4e434e69018cb7bd60f6782",
+  "python": "3.12.14",
+  "versions": {
+    "pandas": "2.3.3",
+    "numpy": "2.2.6",
+    "scikit-learn": "1.7.2",
+    "scipy": "1.18.1",
+    "xgboost": "3.1.1",
+    "joblib": "1.5.2"
+  },
+  "seed": 42,
+  "rows": 36275,
+  "train_rows": 29164,
+  "test_rows": 7111,
+  "train_canceled": 9639,
+  "test_canceled": 2246,
+  "feature_groups": 25478,
+  "shared_train_test_groups": 0,
+  "holdout_majority_accuracy": 0.6841513148642947,
+  "features": [
+    "lead_time",
+    "avg_price_per_room",
+    "market_segment_type",
+    "arrival_month",
+    "no_of_adults",
+    "no_of_children",
+    "no_of_week_nights",
+    "no_of_weekend_nights",
+    "room_type_reserved",
+    "type_of_meal_plan",
+    "required_car_parking_space",
+    "no_of_special_requests"
+  ],
+  "target_encoding": {
+    "Not_Canceled": 0,
+    "Canceled": 1
+  },
+  "selection_metric": "mean grouped training CV F1 for Canceled",
+  "selected_model": "XGBoost",
+  "models": {
+    "Logistic Regression": {
+      "cv_f1_canceled_folds": [
+        0.6941099189840158,
+        0.6622090143635463,
+        0.6821015138023152,
+        0.6670810026931842
+      ],
+      "cv_f1_canceled_mean": 0.6763753624607654,
+      "holdout": {
+        "accuracy": 0.79988749824216,
+        "precision_canceled": 0.7111339148281169,
+        "recall_canceled": 0.6170970614425646,
+        "f1_canceled": 0.6607866507747319,
+        "average_precision_canceled": 0.7310657106975644,
+        "roc_auc": 0.8456097810976508,
+        "confusion_matrix_actual_by_predicted_0_1": [
+          [
+            4302,
+            563
+          ],
+          [
+            860,
+            1386
+          ]
+        ]
+      }
+    },
+    "Decision Tree": {
+      "cv_f1_canceled_folds": [
+        0.71630615640599,
+        0.6711833785004516,
+        0.679689140936778,
+        0.7071950750288573
+      ],
+      "cv_f1_canceled_mean": 0.6935934377180193,
+      "holdout": {
+        "accuracy": 0.7925748839825623,
+        "precision_canceled": 0.6717149220489977,
+        "recall_canceled": 0.6714158504007124,
+        "f1_canceled": 0.6715653529280784,
+        "average_precision_canceled": 0.5599008005194397,
+        "roc_auc": 0.7642038970273978,
+        "confusion_matrix_actual_by_predicted_0_1": [
+          [
+            4128,
+            737
+          ],
+          [
+            738,
+            1508
+          ]
+        ]
+      }
+    },
+    "Random Forest": {
+      "cv_f1_canceled_folds": [
+        0.7646033129904097,
+        0.7163449792328366,
+        0.7318397827562797,
+        0.7450413223140496
+      ],
+      "cv_f1_canceled_mean": 0.7394573493233939,
+      "holdout": {
+        "accuracy": 0.8432006750105471,
+        "precision_canceled": 0.806836679327184,
+        "recall_canceled": 0.6620658949243099,
+        "f1_canceled": 0.727317192467596,
+        "average_precision_canceled": 0.8325502769351422,
+        "roc_auc": 0.8965681595418235,
+        "confusion_matrix_actual_by_predicted_0_1": [
+          [
+            4509,
+            356
+          ],
+          [
+            759,
+            1487
+          ]
+        ]
+      }
+    },
+    "XGBoost": {
+      "cv_f1_canceled_folds": [
+        0.7886127044826854,
+        0.755174875089222,
+        0.75495813133539,
+        0.7728491850629255
+      ],
+      "cv_f1_canceled_mean": 0.7678987239925557,
+      "holdout": {
+        "accuracy": 0.856841513148643,
+        "precision_canceled": 0.8211297071129707,
+        "recall_canceled": 0.699020480854853,
+        "f1_canceled": 0.7551707551707552,
+        "average_precision_canceled": 0.8644407271389318,
+        "roc_auc": 0.9211894344084585,
+        "confusion_matrix_actual_by_predicted_0_1": [
+          [
+            4523,
+            342
+          ],
+          [
+            676,
+            1570
+          ]
+        ]
+      }
+    }
+  }
+}
