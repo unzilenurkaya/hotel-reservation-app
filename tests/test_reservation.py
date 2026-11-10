@@ -5,16 +5,49 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import joblib
 import numpy as np
 import pandas as pd
+from sklearn.tree import DecisionTreeClassifier
 from streamlit.testing.v1 import AppTest
 
 from audit_legacy import audit
-from reservation import ARTIFACT_PATH, CATEGORICAL, DATA_PATH, FEATURES, FIELDS, LABELS, ROOT, predict_cancellation
-from train import load_data, split_data
+from reservation import DATA_PATH, FEATURES, FIELDS, LABELS, ROOT, predict_cancellation
+from train import build_artifact, load_data, make_pipeline, save_model, split_data
 
 APP_PATH = ROOT / "app.py"
+PUBLISHED_EVALUATION = ROOT / "docs" / "evaluation.json"
+
+
+def assert_ui_predictions(case, artifact_path, pipeline, sample):
+    predictions = pipeline.predict(sample)
+    case.assertEqual(set(predictions), {0, 1})
+    with patch("reservation.ARTIFACT_PATH", artifact_path), patch(
+        "reservation.predict_cancellation", wraps=predict_cancellation
+    ) as inference:
+        app = AppTest.from_file(str(APP_PATH)).run()
+        case.assertFalse(app.exception)
+        for expected in (0, 1):
+            with case.subTest(predicted_class=expected):
+                booking = sample.iloc[np.flatnonzero(predictions == expected)[0]]
+                for name, _, kind in FIELDS:
+                    value = booking[name]
+                    if kind == "category":
+                        app.selectbox(key=name).set_value(str(value))
+                    elif kind == "binary":
+                        app.selectbox(key=name).set_value(int(value))
+                    else:
+                        app.number_input(key=name).set_value(float(value) if kind == "float" else int(value))
+                app.button[0].click().run()
+                case.assertFalse(app.exception)
+                messages = app.warning if expected else app.success
+                case.assertFalse(app.success if expected else app.warning)
+                case.assertEqual(len(messages), 1)
+                case.assertEqual(messages[0].value, "Model tahmini · İptal" if expected else "Model tahmini · İptal edilmez")
+                sent = inference.call_args.args[1]
+                case.assertEqual(list(sent.columns), FEATURES)
+                pd.testing.assert_series_equal(sent.iloc[0], booking, check_names=False)
+                score = pipeline.predict_proba(sent)[0, list(pipeline.classes_).index(1)]
+                case.assertEqual(app.metric[0].value, f"%{score * 100:.1f}".replace(".", ","))
 
 
 class DataTests(unittest.TestCase):
@@ -45,26 +78,35 @@ class DataTests(unittest.TestCase):
         )
         self.assertEqual(predict_cancellation(model, pd.DataFrame()), (1, 0.81))
 
+    def test_readme_model_table_matches_published_evaluation(self):
+        recorded = json.loads(PUBLISHED_EVALUATION.read_text())
+        readme = (ROOT / "README.md").read_text().replace("**", "")
+        self.assertEqual(recorded["data_sha256"], hashlib.sha256(DATA_PATH.read_bytes()).hexdigest())
+        self.assertEqual(recorded["target_encoding"], LABELS)
+        self.assertEqual(recorded["features"], FEATURES)
+        self.assertEqual(
+            recorded["selected_model"],
+            max(recorded["models"], key=lambda name: recorded["models"][name]["cv_f1_canceled_mean"]),
+        )
+        for name, result in recorded["models"].items():
+            with self.subTest(model=name):
+                holdout = result["holdout"]
+                (tn, fp), (fn, tp) = holdout["confusion_matrix_actual_by_predicted_0_1"]
+                total = tn + fp + fn + tp
+                self.assertEqual(total, recorded["test_rows"])
+                self.assertEqual(fn + tp, recorded["test_canceled"])
+                self.assertAlmostEqual((tn + tp) / total, holdout["accuracy"])
+                self.assertAlmostEqual(2 * tp / (2 * tp + fp + fn), holdout["f1_canceled"])
+                row = (
+                    f"| {name} | {result['cv_f1_canceled_mean']:.4f} | %{holdout['accuracy'] * 100:.2f} | "
+                    f"{holdout['f1_canceled']:.4f} | {holdout['roc_auc']:.4f} |"
+                )
+                self.assertIn(row.replace(".", ","), readme)
+        self.assertIn("gerçek rezervasyon kararları için doğrulanmış bir sistem değildir", readme)
+        self.assertTrue((ROOT / "docs" / "streamlit-preview.jpg").is_file())
+
 
 class AppTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        if not ARTIFACT_PATH.is_file():
-            raise RuntimeError("Run python train.py before the tests")
-        cls.artifact = joblib.load(ARTIFACT_PATH)
-
-    def test_model_selection_and_artifact_match(self):
-        metrics = json.loads(ARTIFACT_PATH.with_name("evaluation.json").read_text())
-        model = max(metrics["models"], key=lambda name: metrics["models"][name]["cv_f1_canceled_mean"])
-        self.assertEqual(metrics["selected_model"], model)
-        self.assertEqual(self.artifact["selected_model"], model)
-        self.assertEqual(metrics["data_sha256"], hashlib.sha256(DATA_PATH.read_bytes()).hexdigest())
-        pipeline = self.artifact["pipeline"]
-        self.assertEqual(list(pipeline.feature_names_in_), FEATURES)
-        self.assertEqual(list(pipeline.classes_), [0, 1])
-        encoder = pipeline.named_steps["preprocessing"].named_transformers_["cat"]
-        self.assertEqual(self.artifact["categories"], dict(zip(CATEGORICAL, (c.tolist() for c in encoder.categories_))))
-
     def test_missing_or_corrupt_artifact_has_actionable_message(self):
         with tempfile.TemporaryDirectory() as directory:
             model_path = Path(directory) / "missing.joblib"
@@ -77,35 +119,11 @@ class AppTests(unittest.TestCase):
                 self.assertFalse(app.exception)
                 self.assertIn("python train.py", app.error[0].value)
 
-    def test_both_ui_labels_and_complete_raw_inputs_with_real_model(self):
-        X, _ = load_data()
-        sample = X.sample(300, random_state=88)
-        pipeline = self.artifact["pipeline"]
-        predictions = pipeline.predict(sample)
-        self.assertEqual(set(predictions), {0, 1})
-        with patch("reservation.predict_cancellation", wraps=predict_cancellation) as inference:
-            app = AppTest.from_file(str(APP_PATH)).run()
-            self.assertFalse(app.exception)
-            for expected in (0, 1):
-                booking = sample.iloc[np.flatnonzero(predictions == expected)[0]]
-                for name, _, kind in FIELDS:
-                    value = booking[name]
-                    if kind == "category":
-                        app.selectbox(key=name).set_value(str(value))
-                    elif kind == "binary":
-                        app.selectbox(key=name).set_value(int(value))
-                    else:
-                        app.number_input(key=name).set_value(float(value) if kind == "float" else int(value))
-                app.button[0].click().run()
-                self.assertFalse(app.exception)
-                messages = app.warning if expected else app.success
-                self.assertEqual(messages[0].value, "Model tahmini · İptal" if expected else "Model tahmini · İptal edilmez")
-                sent = inference.call_args.args[1]
-                self.assertEqual(list(sent.columns), FEATURES)
-                pd.testing.assert_series_equal(sent.iloc[0], booking, check_names=False)
-                score = pipeline.predict_proba(sent)[0, list(pipeline.classes_).index(1)]
-                self.assertEqual(app.metric[0].value, f"%{score * 100:.1f}".replace(".", ","))
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_ui_labels_and_inputs_with_small_pipeline(self):
+        X, y = load_data()
+        sample = X.sample(128, random_state=88)
+        pipeline = make_pipeline(DecisionTreeClassifier(random_state=42)).fit(sample, y.loc[sample.index])
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = Path(directory) / "test.joblib"
+            save_model(build_artifact(pipeline, "Decision Tree", sample), model_path)
+            assert_ui_predictions(self, model_path, pipeline, sample)

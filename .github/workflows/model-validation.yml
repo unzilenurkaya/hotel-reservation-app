@@ -1,0 +1,40 @@
+name: Model validation
+
+on:
+  # Push paths track the latest changes rather than the cumulative PR diff.
+  push:
+    branches: ['**']
+    paths:
+      - '.github/workflows/model-validation.yml'
+      - 'Hotel Reservations.csv'
+      - 'requirements.txt'
+      - 'reservation.py'
+      - 'train.py'
+      - 'tests/test_trained_model.py'
+      - 'docs/evaluation.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  model:
+    name: Python 3.12 / train and verify holdout
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install and check dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip check
+      - name: Train and evaluate the selected model
+        run: python -W error::RuntimeWarning -u train.py
+      - name: Verify recorded metrics and real Streamlit predictions
+        run: python -W error::RuntimeWarning -m unittest discover -s tests -p test_trained_model.py -v

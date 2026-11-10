@@ -48,12 +48,23 @@ python -m streamlit run app.py
 
 `train.py`, `artifacts/reservation_model.joblib` ve `artifacts/evaluation.json` üretir. Uygulama yalnızca bu yerel eğitim çıktısını kullanır. Joblib dosyalarını güvendiğiniz bir eğitim çalışmasından üretin.
 
+## Testler ve GitHub Actions
+
+Hızlı testler için önceden oluşturulmuş bir model gerekmez. Testler grup ayrımını, README’deki sonuçların kayıtlı değerlendirmeyle uyumunu, 12 form alanını, iki tahmin mesajını ve eksik ya da bozuk model dosyasının davranışını kontrol eder.
+
 ```bash
 python audit_legacy.py
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -p test_reservation.py -v
 ```
 
-Testleri model oluşturulduktan sonra çalıştırın. Testler eski satır seçimini, grup ayrımını, model seçim kuralını, her iki tahmin mesajını, 12 ham girdinin modele aktarılmasını ve eksik/bozuk model dosyası davranışını kapsar.
+Tam doğrulama, dört modeli yeniden eğitir. Yayımlanan sonuçları, seçilen modelin ayrı test kümesindeki sonuçlarını ve gerçek modelin Streamlit mesajlarını kontrol eder.
+
+```bash
+python train.py
+python -m unittest discover -s tests -p test_trained_model.py -v
+```
+
+GitHub Actions her iki kontrolü Python 3.12 ile çalıştırır. **Fast checks** pull request güncellemelerinde çalışır. **Model validation** eğitim kodu, veri seti, bağımlılıklar veya kayıtlı değerlendirme gibi ilgili dosyalar değiştiğinde çalışır. README değişikliği tek başına yeniden eğitim başlatmaz.
 
 ## Dosyalar
 
@@ -63,7 +74,8 @@ Testleri model oluşturulduktan sonra çalıştırın. Testler eski satır seçi
 | `reservation.py` | Ortak özellikler, hedef kodlaması ve iptal skorunun okunması |
 | `train.py` | Eğitim, model seçimi, ayrı test değerlendirmesi ve model kaydı |
 | `audit_legacy.py` | Eski veri seçiminin ve test örtüşmesinin yeniden üretimi |
-| `tests/test_reservation.py` | Veri, model ve arayüz testleri |
+| `tests/test_reservation.py` | Tam eğitim gerektirmeyen veri, README ve arayüz kontrolleri |
+| `tests/test_trained_model.py` | Yeniden üretilen model, test metrikleri ve arayüz doğrulaması |
 | `docs/evaluation.json` | Temiz ortamda kaydedilen değerlendirme sonuçları |
 | `Hotel Reservations.csv`, `Hotel_Reservation_Projesi.ipynb`, `model.pkl` | Değiştirilmemiş veri ve tarihsel çalışma |
 

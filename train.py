@@ -102,6 +102,21 @@ def save_model(artifact, path):
             os.unlink(temporary_path)
 
 
+def build_artifact(pipeline, model_name, training_features):
+    encoder = pipeline.named_steps["preprocessing"].named_transformers_["cat"]
+    return {
+        "schema_version": ARTIFACT_VERSION,
+        "pipeline": pipeline,
+        "selected_model": model_name,
+        "defaults": training_features.iloc[0].to_dict(),
+        "bounds": {
+            name: (float(training_features[name].min()), float(training_features[name].max()))
+            for name in NUMERIC
+        },
+        "categories": dict(zip(CATEGORICAL, (values.tolist() for values in encoder.categories_))),
+    }
+
+
 def train():
     X, y = load_data()
     train_indices, test_indices, folds, groups = split_data(X, y)
@@ -127,8 +142,6 @@ def train():
         pipeline.fit(X_train, y_train)
         results[name]["holdout"] = holdout_metrics(pipeline, X_test, y_test)
 
-    pipeline = pipelines[selected]
-    encoder = pipeline.named_steps["preprocessing"].named_transformers_["cat"]
     metrics = {
         "data_sha256": hashlib.sha256(DATA_PATH.read_bytes()).hexdigest(),
         "python": platform.python_version(),
@@ -148,20 +161,16 @@ def train():
         "selected_model": selected,
         "models": results,
     }
-    artifact = {
-        "schema_version": ARTIFACT_VERSION,
-        "pipeline": pipeline,
-        "selected_model": selected,
-        "defaults": X_train.iloc[0].to_dict(),
-        "bounds": {name: (float(X_train[name].min()), float(X_train[name].max())) for name in NUMERIC},
-        "categories": dict(zip(CATEGORICAL, (values.tolist() for values in encoder.categories_))),
-    }
+    artifact = build_artifact(pipelines[selected], selected, X_train)
     save_model(artifact, ARTIFACT_PATH)
     ARTIFACT_PATH.with_name("evaluation.json").write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(f"Seçilen model | {selected}")
     print(f"Ayrı test kümesi | {len(X_test)} kayıt")
+    holdout = results[selected]["holdout"]
+    print(f"Test doğruluğu | {holdout['accuracy']:.2%}")
+    print(f"Test iptal F1 | {holdout['f1_canceled']:.4f}")
     print(f"Model ve değerlendirme | {ARTIFACT_PATH.parent}")
 
 
