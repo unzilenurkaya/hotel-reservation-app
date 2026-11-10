@@ -140,7 +140,9 @@ def train():
     selected = max(results, key=lambda name: results[name]["cv_f1_canceled_mean"])
     for name, pipeline in pipelines.items():
         pipeline.fit(X_train, y_train)
-        results[name]["holdout"] = holdout_metrics(pipeline, X_test, y_test)
+        holdout = holdout_metrics(pipeline, X_test, y_test)
+        results[name]["holdout"] = holdout
+        print(f"{name} | test doğruluğu {holdout['accuracy']:.2%} | iptal F1 {holdout['f1_canceled']:.4f}")
 
     metrics = {
         "data_sha256": hashlib.sha256(DATA_PATH.read_bytes()).hexdigest(),

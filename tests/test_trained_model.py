@@ -1,5 +1,6 @@
 import json
 import unittest
+from statistics import mean
 
 import joblib
 import numpy as np
@@ -31,16 +32,28 @@ class TrainedModelTests(unittest.TestCase):
             with self.subTest(field=key):
                 self.assertEqual(generated[key], recorded[key])
 
-        for name, result in recorded["models"].items():
+        self.assertEqual(generated["models"].keys(), recorded["models"].keys())
+        for name, result in generated["models"].items():
             with self.subTest(model=name):
-                actual = generated["models"][name]
-                self.assertAlmostEqual(actual["cv_f1_canceled_mean"], result["cv_f1_canceled_mean"], places=4)
-                for metric in ("accuracy", "f1_canceled", "roc_auc"):
-                    self.assertAlmostEqual(actual["holdout"][metric], result["holdout"][metric], places=4)
+                folds = result["cv_f1_canceled_folds"]
+                self.assertEqual(len(folds), 4)
+                self.assertTrue(all(0 <= score <= 1 for score in folds))
+                self.assertAlmostEqual(mean(folds), result["cv_f1_canceled_mean"])
+                holdout = result["holdout"]
+                (tn, fp), (fn, tp) = holdout["confusion_matrix_actual_by_predicted_0_1"]
+                self.assertEqual(tn + fp + fn + tp, recorded["test_rows"])
+                self.assertEqual(fn + tp, recorded["test_canceled"])
+                self.assertAlmostEqual((tn + tp) / recorded["test_rows"], holdout["accuracy"])
+                self.assertAlmostEqual(2 * tp / (2 * tp + fp + fn), holdout["f1_canceled"])
 
         selected = max(generated["models"], key=lambda name: generated["models"][name]["cv_f1_canceled_mean"])
         self.assertEqual(self.artifact["selected_model"], selected)
         self.assertEqual(generated["selected_model"], selected)
+        self.assertAlmostEqual(
+            generated["models"][selected]["cv_f1_canceled_mean"],
+            recorded["models"][selected]["cv_f1_canceled_mean"],
+            places=4,
+        )
         pipeline = self.artifact["pipeline"]
         self.assertIsInstance(pipeline.named_steps["model"], XGBClassifier)
         self.assertEqual(list(pipeline.feature_names_in_), FEATURES)
@@ -55,6 +68,7 @@ class TrainedModelTests(unittest.TestCase):
         self.assertEqual(actual_holdout[matrix_key], generated["models"][selected]["holdout"][matrix_key])
         self.assertEqual(f"{actual_holdout['accuracy']:.2%}", "85.68%")
         self.assertEqual(f"{actual_holdout['f1_canceled']:.4f}", "0.7552")
+        self.assertAlmostEqual(actual_holdout["roc_auc"], published_holdout["roc_auc"], places=4)
 
     def test_real_model_labels_and_inputs_on_holdout_examples(self):
         sample = self.X_test

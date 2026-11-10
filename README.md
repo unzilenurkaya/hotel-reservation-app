@@ -25,6 +25,8 @@ Ekran görüntüsü tek bir örneği gösterir. Model skoru kalibre edilmemişti
 
 Test kümesinde 2.246 iptal var. Her kayda «iptal edilmez» diyen çoğunluk karşılaştırmasının doğruluğu %68,42. Seçilen XGBoost modelinin iptal kesinliği %82,11, iptal yakalama oranı %69,90. Sayısal sonuçların tamamı, veri özeti ve kullanılan sürümler `docs/evaluation.json` içinde.
 
+Tablo macOS arm64 üzerinde kaydedilen çalıştırmaya ait. Linux’ta Decision Tree ve Random Forest puanlarında küçük farklar görülebilir. GitHub Actions, her adayın doğruluk ve iptal F1 hesaplarını test çıktısıyla karşılaştırır ve seçilen XGBoost için yayımlanan doğruluk, iptal F1 ve karışıklık matrisini yeniden doğrular.
+
 ### Orijinal not defterinin sonuçları
 
 | Model | Not defterindeki doğruluk |
