@@ -1,47 +1,65 @@
-import streamlit as st
-import pandas as pd
+"""Streamlit demo using the fitted preprocessing and classifier together."""
+
+from pickle import UnpicklingError
+
 import joblib
+import pandas as pd
+import streamlit as st
 
-# Modeli yükle
-model = joblib.load("model.pkl")
+from reservation import ARTIFACT_PATH, ARTIFACT_VERSION, FEATURES, FIELDS, LABELS, predict_cancellation
 
-st.title("🛎️ Otel Rezervasyon İptal Tahmini")
+st.set_page_config(page_title="Otel Rezervasyon İptal Tahmini", page_icon="🏨", layout="wide")
+st.title("Otel Rezervasyon İptal Tahmini")
+st.markdown("Rezervasyon bilgilerini girerek modelin iptal tahminini ve iptal skorunu inceleyin.")
 
-# Kullanıcıdan giriş al
-st.sidebar.header("Müşteri Bilgileri")
 
-lead_time = st.sidebar.number_input("Lead Time (gün)", min_value=0)
-adr = st.sidebar.number_input("Ortalama Günlük Ücret (ADR)")
-total_of_special_requests = st.sidebar.slider("Özel İstek Sayısı", 0, 5)
-required_car_parking_spaces = st.sidebar.selectbox("Otopark Gerekiyor mu?", ["Evet", "Hayır"])
-deposit_type = st.sidebar.selectbox("Depozito Tipi", ["No Deposit", "Non Refund", "Refundable"])
-market_segment = st.sidebar.selectbox("Pazar Segmenti", ["Online TA", "Offline TA/TO", "Groups", "Direct"])
+@st.cache_resource
+def load_artifact(path, modified_ns):
+    # The timestamp invalidates the cache after local retraining.
+    return joblib.load(path)
 
-# Girdi verisini işleme
-data = pd.DataFrame({
-    "lead_time": [lead_time],
-    "adr": [adr],
-    "total_of_special_requests": [total_of_special_requests],
-    "required_car_parking_spaces": [1 if required_car_parking_spaces == "Evet" else 0],
-    "deposit_type": [deposit_type],
-    "market_segment": [market_segment]
-})
 
-# One-hot encoding (modelin eğitimde kullandığı gibi olmalı!)
-data = pd.get_dummies(data)
+def booking_field(name, label, kind, artifact):
+    default = artifact["defaults"][name]
+    if kind == "category":
+        options = artifact["categories"][name]
+        return st.selectbox(label, options, index=options.index(default), key=name)
+    if kind == "binary":
+        return st.selectbox(label, [0, 1], index=int(default), format_func=lambda value: "Evet" if value else "Hayır", key=name)
+    lower, upper = artifact["bounds"][name]
+    if kind == "float":
+        return st.number_input(label, min_value=lower, max_value=upper, value=float(default), step=0.01, key=name)
+    return st.number_input(label, min_value=int(lower), max_value=int(upper), value=int(default), step=1, key=name)
 
-# Eksik sütunları doldurma (modelin beklediği sütun sayısı olmalı!)
-expected_cols = model.feature_names_in_
-for col in expected_cols:
-    if col not in data.columns:
-        data[col] = 0
 
-data = data[expected_cols]
+try:
+    artifact = load_artifact(ARTIFACT_PATH, ARTIFACT_PATH.stat().st_mtime_ns)
+except FileNotFoundError:
+    st.info("Model dosyası henüz oluşturulmadı. Proje klasöründe `python train.py` çalıştırın.")
+    st.stop()
+except (OSError, ImportError, ValueError, EOFError, KeyError, UnpicklingError):
+    st.error("Model dosyası açılamadı. Proje bağımlılıklarını kurup `python train.py` ile yeniden oluşturun.")
+    st.stop()
 
-# Tahmin
-if st.button("Tahmin Et"):
-    prediction = model.predict(data)[0]
-    if prediction == 1:
-        st.error("❌ Bu rezervasyonun iptal edilme ihtimali yüksek.")
+if not isinstance(artifact, dict) or artifact.get("schema_version") != ARTIFACT_VERSION:
+    st.error("Model sürümü bu uygulamayla uyumlu değil. `python train.py` ile yeni model oluşturun.")
+    st.stop()
+
+st.caption(f"Kullanılan model · {artifact['selected_model']}")
+with st.form("reservation"):
+    columns = st.columns(3)
+    values = {}
+    for index, (name, label, kind) in enumerate(FIELDS):
+        with columns[index % len(columns)]:
+            values[name] = booking_field(name, label, kind, artifact)
+    submitted = st.form_submit_button("Tahmin et", type="primary")
+
+if submitted:
+    booking = pd.DataFrame([values], columns=FEATURES)
+    predicted, score = predict_cancellation(artifact["pipeline"], booking)
+    if predicted == LABELS["Canceled"]:
+        st.warning("Model tahmini · İptal")
     else:
-        st.success("✅ Bu rezervasyonun iptal edilme ihtimali düşük.")
+        st.success("Model tahmini · İptal edilmez")
+    st.metric("İptal model skoru", f"%{score * 100:.1f}".replace(".", ","))
+    st.caption("Skor kalibre edilmemiştir. Bu uygulama 2017–2018 verisine dayanan bir portfolyo demosudur.")
